@@ -2,19 +2,18 @@
 
 A bare-bones sandbox for agentic coding based on UNIX users.
 
-TL;DR:
+**TL;DR:**
 
 ```shell
 uv tool install agent-as-unix-user  # Install this CLI
-au new  # Create a new UNIX user for your AI agent
-au run --env FOO=bar bash  # Run bash (with an environment variable) as the agent UNIX user,
-                           # with only access to `/home/agent`
-au mount add --rw ~/example # Expose `~/example` in `/home/agent/example`
-                            # with read&write access
+au new  # Create a new UNIX user to run your AI agent commands.
+        # This UNIX user only has write access on `/home/agent`
+        # and doesn't even has read access to your $HOME.
+au run claude --dangerously-skip-permissions # Run Claude in yolo mode with guilt \o/
+au run --env FOO=bar bash  # Run bash with an environment variable
+au mount add --rw ~/example # Expose `~/example` in `/home/agent/example` with read&write access
 cd ~/example && au run bash # `au` detects current directory corresponds to agent's
                             # `/home/agent/example`, so it changes to it before starting bash
-au run -- claude --dangerously-skip-permissions # Run Claude in yolo mode without guilt,
-                                                # the UNIX sandbox has you covered \o/
 ```
 
 UNIX has been designed from the ground up to allow multiple users to securely share a single machine
@@ -43,7 +42,8 @@ Pros:
 Cons:
 
 - Requires root access to create the agent user (this is done once; after that root is not needed to run a command as the agent)
-- No network filtering out-of-the-box (but can [be easily added using an HTTP proxy](#example-2-filter-network-traffic)).
+- No network filtering out-of-the-box (e.g. a rogue agent could scan your local network to mess with your printer :/).
+  However this can [be easily added using an HTTP proxy](#example-2-filter-network-traffic)).
 - Tricky to share the commands you installed in your home (i.e. basically everything you installed with `curl https://someapp.com/install.sh | bash`).
   Note this is a user experience con (as it means reinstalling your tools for the agent user), but also a security pro since otherwise a malicious
   agent could escape the sandbox by just modifying a shared tool and waiting for you to run it...
