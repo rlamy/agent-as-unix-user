@@ -19,7 +19,7 @@ cd ~/example && au run bash # `au` detects current directory corresponds to agen
 UNIX has been designed from the ground up to allow multiple users to securely share a single machine
 (remember the time when a terminal was a physical thing that multiple users used to connect to a single mainframe? Yeah, me neither).
 
-More recently, Android uses a similar technique to isolate each application by having a dedicated user for each application.
+More recently, Android uses a similar technique to isolate applications by having a dedicated user for each one of them.
 
 So why not do the same for agentic coding? Enter `agent-as-unix-user`, a simple wrapper around standard UNIX commands to easily:
 
