@@ -9,7 +9,7 @@ uv tool install agent-as-unix-user  # Install this CLI
 au new  # Create a new UNIX user to run your AI agent commands.
         # This UNIX user only has write access on `/home/agent`
         # and doesn't even has read access to your $HOME.
-au run claude --dangerously-skip-permissions # Run Claude in yolo mode with guilt \o/
+au run claude --dangerously-skip-permissions # Run Claude in yolo mode without guilt \o/
 au run --env FOO=bar bash  # Run bash with an environment variable
 au mount add --rw ~/example # Expose `~/example` in `/home/agent/example` with read&write access
 cd ~/example && au run bash # `au` detects current directory corresponds to agent's
@@ -26,7 +26,7 @@ So why not do the same for agentic coding? Enter `agent-as-unix-user`, a simple 
 - Create a dedicated UNIX user
 - Give access to certain folders in read-only or read&write mode
 - Undo all of this if needed ;-)
-- Run commands as the UNIX user
+- Run ~~`claude --dangerously-skip-permissions`~~ a command as the UNIX user
 
 Of course, this solution has tradeoffs, but it offers a surprisingly high bang for the buck:
 
@@ -34,7 +34,7 @@ Pros:
 
 - Unlike containers and VMs, there's no need to eat gigabytes of disk or deal with manual start/stop.
 - Strong isolation: you can run your agent in full yolo mode knowing it can only break its own home directory.
-- Simple to understand (so simple that [all actual commands are printed before being executed](#transparency-as-a-feature)!)
+- Simple to understand (it's just a wrapper over [standard shell commands that are printed before being executed](#transparency-as-a-feature)!)
 - Simple to reason about: the agent can only modify its home and cannot read your home. From there you can easily
   give it access (in read-only or read-write) to some specific folders in your home.
 - Can be extended using the regular UNIX ecosystem (see the [recipes below](#recipes)).
