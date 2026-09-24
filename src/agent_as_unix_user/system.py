@@ -145,6 +145,13 @@ def healthcheck_agent(runner: CommandRunner, agent: AgentConfig) -> HealthCheckR
         errors.append(f"missing entrypoint: {entrypoint}")
     elif not os.access(entrypoint, os.X_OK):
         errors.append(f"entrypoint is not executable: {entrypoint}")
+    elif is_entrypoint_inside_home(entrypoint, home):
+        # Legacy agents kept the setuid entrypoint inside the agent's home,
+        # where the agent could swap it out. Recreate the agent to relocate it.
+        errors.append(
+            f"entrypoint is inside the agent home ({entrypoint}); "
+            "it is writable by the agent — recreate this agent with `au new`"
+        )
     # TODO: check that entrypoint is owned by root
     # TODO: check that entrypoint has setuid bit set
 
@@ -173,8 +180,30 @@ def config_dir(home: Path) -> Path:
     return home / ".config" / "agent-as-unix-user"
 
 
-def entrypoint_src_dir(home: Path) -> Path:
-    return config_dir(home) / "su_as_agent-src"
+# Root-owned location for the setuid entrypoint. It is *outside* the agent's
+# home on purpose: the agent must never be able to modify (or swap out) the
+# binary it invokes with root privileges. Every directory on this path is
+# owned by root and only writable by root.
+ENTRYPOINT_INSTALL_ROOT = Path("/usr/local/libexec/agent-as-unix-user")
+
+
+def entrypoint_install_dir(user_name: str) -> Path:
+    return ENTRYPOINT_INSTALL_ROOT / user_name
+
+
+def entrypoint_install_path(user_name: str) -> Path:
+    return entrypoint_install_dir(user_name) / "su_as_agent"
+
+
+def is_entrypoint_inside_home(entrypoint: Path, home: Path | None) -> bool:
+    """True if the entrypoint lives inside the agent's home (insecure legacy layout)."""
+    if home is None:
+        return False
+    try:
+        entrypoint.resolve().relative_to(home.resolve())
+        return True
+    except (ValueError, OSError):
+        return False
 
 
 def agent_readme_content(agent: AgentConfig, config_path: Path, home: Path) -> str:
@@ -185,11 +214,8 @@ This directory belongs to the agent user `{agent.user_name}`.
 Related configuration file:
 - `{config_path}`
 
-Entrypoint:
-- `{config_dir(home) / "su_as_agent"}`
-
-Source code:
-- `{entrypoint_src_dir(home)}`
+Entrypoint (root-owned, outside this home):
+- `{entrypoint_install_path(agent.user_name)}`
 
 To delete this agent safely, use `au delete --user {agent.user_name}`.
 That command will remove the UNIX user, group, home directory and all data.
@@ -218,6 +244,12 @@ ENTRYPOINT_SRC_MAIN_C = """
 #ifndef TARGET_GID
 // `TARGET_GID` is defined by the Makefile
 #error TARGET_GID is not defined (compiling without the Makefile ?)
+#endif
+
+#ifndef CALLER_UID
+// `CALLER_UID` is defined by the Makefile (the uid of the human who created
+// the agent, and the only uid allowed to run this entrypoint).
+#error CALLER_UID is not defined (compiling without the Makefile ?)
 #endif
 
 #define MAX_MOUNTS 64
@@ -304,6 +336,17 @@ int main(int argc, char **argv) {
     }
 
     uid_t original_uid = getuid();
+
+    // Only the human who created this agent may run the entrypoint.
+    // The binary is setuid-root and group-executable by the su-as-agent group,
+    // which is the agent's *primary* group. Without this check the agent could
+    // execute the entrypoint itself and abuse its root privileges to escalate.
+    if (original_uid != CALLER_UID) {
+        fprintf(stderr,
+                "ERROR: this entrypoint may only be run by uid %d (called by uid %d)\\n",
+                CALLER_UID, original_uid);
+        return 1;
+    }
 
     // Resolve caller's and agent's home directories for mount validation
     struct passwd *caller_pw = getpwuid(original_uid);
@@ -460,15 +503,16 @@ int main(int argc, char **argv) {
 """
 
 
-def entrypoint_src_makefile(target_uid: str, target_gid: str) -> str:
+def entrypoint_src_makefile(target_uid: str, target_gid: str, caller_uid: str) -> str:
     return f"""\
 CC ?= cc
 CFLAGS ?= -O2 -Wall -Wextra -Werror
 TARGET_UID ?= {target_uid}
 TARGET_GID ?= {target_gid}
+CALLER_UID ?= {caller_uid}
 
 all: su_as_agent
 
 su_as_agent: main.c
-	$(CC) $(CFLAGS) -DTARGET_UID=$(TARGET_UID) -DTARGET_GID=$(TARGET_GID) -o $@ $<
+	$(CC) $(CFLAGS) -DTARGET_UID=$(TARGET_UID) -DTARGET_GID=$(TARGET_GID) -DCALLER_UID=$(CALLER_UID) -o $@ $<
 """
